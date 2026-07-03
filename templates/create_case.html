@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Case - Forensic System</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #ecf0f1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .form-container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 500px;
+            border-top: 4px solid #e67e22; /* Different color for visual distinction */
+        }
+        h2 {
+            color: #2c3e50;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #34495e;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="date"], select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        .btn-submit {
+            width: 100%;
+            padding: 12px;
+            background-color: #e67e22;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.3s ease;
+        }
+        .btn-submit:hover {
+            background-color: #d35400;
+        }
+        .btn-back {
+            display: block;
+            text-align: center;
+            margin-top: 15px;
+            color: #7f8c8d;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .btn-back:hover {
+            color: #34495e;
+            text-decoration: underline;
+        }
+        .success {
+            color: #27ae60;
+            background-color: #e8f8f5;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            margin-bottom: 20px;
+            border: 1px solid #27ae60;
+        }
+        .error {
+            color: #e74c3c;
+            background-color: #fdf0ed;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            margin-bottom: 20px;
+            border: 1px solid #e74c3c;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="form-container">
+        <h2>Open Medico-Legal Case</h2>
+
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            {% for message in messages %}
+              <div class="{% if 'Error' in message %}error{% else %}success{% endif %}">
+                  {{ message }}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('create_case') }}">
+            <div class="form-group">
+                <label for="case_id">Case ID (e.g., CASE-2026-003)</label>
+                <input type="text" id="case_id" name="case_id" required placeholder="CASE-YYYY-XXX">
+            </div>
+            
+            <div class="form-group">
+                <label for="patient_id">Select Patient</label>
+                <select id="patient_id" name="patient_id" required>
+                    <option value="">-- Choose a Patient --</option>
+                    {% for patient in patients %}
+                        <option value="{{ patient.PatientID }}">{{ patient.FullName }} (ID: {{ patient.PatientID }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="assigned_jmo">Assign Medical Officer</label>
+                <select id="assigned_jmo" name="assigned_jmo" required>
+                    <option value="">-- Choose an Officer --</option>
+                    {% for doc in doctors %}
+                        <option value="{{ doc.StaffID }}">{{ doc.FullName }} ({{ doc.Role }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="case_type">Incident Type</label>
+                <select id="case_type" name="case_type" required>
+                    <option value="Accident">Accident</option>
+                    <option value="Assault">Assault</option>
+                    <option value="Homicide">Homicide</option>
+                    <option value="Sudden Death">Sudden Death</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="incident_date">Incident Date</label>
+                <input type="date" id="incident_date" name="incident_date" required>
+            </div>
+
+            <div class="form-group">
+                <label for="case_status">Status</label>
+                <select id="case_status" name="case_status" required>
+                    <option value="Open">Open</option>
+                    <option value="Pending Investigation">Pending Investigation</option>
+                    <option value="Closed">Closed</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn-submit">Create Case</button>
+        </form>
+        
+        <a href="{{ url_for('dashboard') }}" class="btn-back">← Back to Dashboard</a>
+    </div>
+
+</body>
+</html>

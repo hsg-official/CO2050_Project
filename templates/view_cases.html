@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Cases - Forensic System</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #ecf0f1;
+            padding: 40px;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 1000px;
+            margin: auto;
+            border-top: 4px solid #8e44ad;
+        }
+        h2 { color: #2c3e50; margin-top: 0; }
+        
+        .search-bar {
+            display: flex;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        .search-bar input[type="text"] {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .search-bar button {
+            padding: 10px 20px;
+            background-color: #8e44ad;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .search-bar button:hover { background-color: #732d91; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th { background-color: #f8f9fa; color: #2c3e50; }
+        tr:hover { background-color: #f1f2f6; }
+        
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        .status-Open { background-color: #e67e22; }
+        .status-Pending { background-color: #f1c40f; color: #333; }
+        .status-Closed { background-color: #27ae60; }
+        
+        .btn-back {
+            display: inline-block;
+            margin-top: 20px;
+            color: #7f8c8d;
+            text-decoration: none;
+        }
+        .btn-back:hover { color: #34495e; text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Case Directory</h2>
+        
+        <form class="search-bar" method="GET" action="{{ url_for('view_cases') }}">
+            <input type="text" name="search" placeholder="Search by Case ID, Patient Name, or Status..." value="{{ search_query }}">
+            <button type="submit">Search</button>
+            <a href="{{ url_for('view_cases') }}" style="padding: 10px; color: #8e44ad; text-decoration: none;">Clear</a>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Case ID</th>
+                    <th>Patient Name</th>
+                    <th>Assigned JMO</th>
+                    <th>Type</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+    {% for case in cases %}
+    <tr>
+        <td><strong>{{ case.CaseID }}</strong></td>
+        <td>{{ case.PatientName }}</td>
+        <td>{{ case.JMOName }}</td>
+        <td>{{ case.CaseType }}</td>
+        <td>{{ case.IncidentDate }}</td>
+        <td>
+            {% if role == 'Admin' or (role in ['Doctor', 'JMO'] and case.AssignedJMO == current_user_id) %}
+                <form action="{{ url_for('update_case_status') }}" method="POST" style="display: flex; gap: 5px; margin: 0;">
+                    <input type="hidden" name="case_id" value="{{ case.CaseID }}">
+                    <select name="case_status" style="padding: 5px; border-radius: 4px; border: 1px solid #bdc3c7;">
+                        <option value="Open" {% if case.CaseStatus == 'Open' %}selected{% endif %}>Open</option>
+                        <option value="Pending Investigation" {% if case.CaseStatus == 'Pending Investigation' %}selected{% endif %}>Pending</option>
+                        <option value="Closed" {% if case.CaseStatus == 'Closed' %}selected{% endif %}>Closed</option>
+                    </select>
+                    <button type="submit" style="padding: 5px 10px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Save</button>
+                </form>
+            {% else %}
+                <span class="status-badge status-{{ case.CaseStatus.split(' ')[0] }}">
+                    {{ case.CaseStatus }}
+                </span>
+            {% endif %}
+        </td>
+    </tr>
+    {% else %}
+    <tr>
+        <td colspan="6" style="text-align: center; color: #7f8c8d;">No cases found matching your search.</td>
+    </tr>
+    {% endfor %}
+</tbody>
+        </table>
+        
+        <a href="{{ url_for('dashboard') }}" class="btn-back">← Back to Dashboard</a>
+    </div>
+</body>
+</html>

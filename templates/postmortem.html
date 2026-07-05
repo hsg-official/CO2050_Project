@@ -71,7 +71,7 @@
                 <select id="case_id" name="case_id" required>
                     <option value="">-- Choose an Open Case --</option>
                     {% for case in cases %}
-                        <option value="{{ case.CaseID }}">{{ case.CaseID }}</option>
+                        <option value="{{ case.caseid }}">{{ case.caseid }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -81,7 +81,7 @@
                 <select id="doctor_id" name="doctor_id" required>
                     <option value="">-- Confirm Doctor --</option>
                     {% for doc in doctors %}
-                        <option value="{{ doc.StaffID }}">{{ doc.FullName }}</option>
+                        <option value="{{ doc.staffid }}">{{ doc.fullname }}</option>
                     {% endfor %}
                 </select>
             </div>

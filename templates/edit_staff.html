@@ -23,17 +23,17 @@
 
     <div class="form-container">
         <h2>Modify Staff Role</h2>
-        <p class="subtitle">Updating profile for: <strong>{{ staff.FullName }}</strong></p>
+        <p class="subtitle">Updating profile for: <strong>{{ staff.fullname }}</strong></p>
 
-        <form method="POST" action="{{ url_for('edit_staff', staff_id=staff.StaffID) }}">
+        <form method="POST" action="{{ url_for('edit_staff', staff_id=staff.staffid) }}">
             <div class="form-group">
                 <label for="role">Assign New Role</label>
                 <select id="role" name="role" required>
-                    <option value="Doctor" {% if staff.Role == 'Doctor' %}selected{% endif %}>Doctor</option>
-                    <option value="JMO" {% if staff.Role == 'JMO' %}selected{% endif %}>Judicial Medical Officer (JMO)</option>
-                    <option value="Laboratory Staff" {% if staff.Role == 'Laboratory Staff' %}selected{% endif %}>Laboratory Staff</option>
-                    <option value="Clerical Officer" {% if staff.Role == 'Clerical Officer' %}selected{% endif %}>Clerical Officer</option>
-                    <option value="Admin" {% if staff.Role == 'Admin' %}selected{% endif %}>System Administrator</option>
+                    <option value="Doctor" {% if staff.role == 'Doctor' %}selected{% endif %}>Doctor</option>
+                    <option value="JMO" {% if staff.role == 'JMO' %}selected{% endif %}>Judicial Medical Officer (JMO)</option>
+                    <option value="Laboratory Staff" {% if staff.role == 'Laboratory Staff' %}selected{% endif %}>Laboratory Staff</option>
+                    <option value="Clerical Officer" {% if staff.role == 'Clerical Officer' %}selected{% endif %}>Clerical Officer</option>
+                    <option value="Admin" {% if staff.role == 'Admin' %}selected{% endif %}>System Administrator</option>
                 </select>
             </div>
 

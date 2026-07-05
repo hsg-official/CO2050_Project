@@ -34,7 +34,7 @@
                 <select id="evidence_id" name="evidence_id" required>
                     <option value="">-- Choose Evidence Item --</option>
                     {% for item in evidence_items %}
-                        <option value="{{ item.EvidenceID }}">ID: {{ item.EvidenceID }} - {{ item.EvidenceType }} (Case: {{ item.CaseID }})</option>
+                        <option value="{{ item.evidenceid }}">ID: {{ item.evidenceid }} - {{ item.evidencetype }} (Case: {{ item.caseid }})</option>
                     {% endfor %}
                 </select>
             </div>
@@ -43,7 +43,7 @@
                 <select id="lab_staff_id" name="lab_staff_id" required>
                     <option value="">-- Select Lab Staff --</option>
                     {% for staff in lab_staff %}
-                        <option value="{{ staff.StaffID }}">{{ staff.FullName }}</option>
+                        <option value="{{ staff.staffid }}">{{ staff.fullname }}</option>
                     {% endfor %}
                 </select>
             </div>

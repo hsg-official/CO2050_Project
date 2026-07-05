@@ -22,9 +22,9 @@
             <tbody>
                 {% for p in patients %}
                 <tr>
-                    <td>{{ p.PatientID }}</td><td>{{ p.FullName }}</td><td>{{ p.Age }}</td>
-                    <td>{{ p.Gender }}</td><td>{{ p.ContactInfo }}</td>
-                    <td><a href="{{ url_for('edit_patient', patient_id=p.PatientID) }}" class="btn-edit">Edit File</a></td>
+                    <td>{{ p.patientid }}</td><td>{{ p.fullname }}</td><td>{{ p.age }}</td>
+                    <td>{{ p.gender }}</td><td>{{ p.contactinfo }}</td>
+                    <td><a href="{{ url_for('edit_patient', patient_id=p.patientid) }}" class="btn-edit">Edit File</a></td>
                 </tr>
                 {% endfor %}
             </tbody>

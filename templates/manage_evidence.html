@@ -52,7 +52,7 @@
                         <label for="case_id">Associated Case</label>
                         <select id="case_id" name="case_id" required>
                             <option value="">-- Choose Case --</option>
-                            {% for case in cases %}<option value="{{ case.CaseID }}">{{ case.CaseID }}</option>{% endfor %}
+                            {% for case in cases %}<option value="{{ case.caseid }}">{{ case.caseid }}</option>{% endfor %}
                         </select>
                     </div>
                     <div class="form-group">
@@ -71,7 +71,7 @@
                         <label for="collected_by">Collected By</label>
                         <select id="collected_by" name="collected_by" required>
                             <option value="">-- Select Staff --</option>
-                            {% for person in staff %}<option value="{{ person.StaffID }}">{{ person.FullName }} ({{ person.Role }})</option>{% endfor %}
+                            {% for person in staff %}<option value="{{ person.staffid }}">{{ person.fullname }} ({{ person.role }})</option>{% endfor %}
                         </select>
                     </div>
                     <div class="form-group">
@@ -106,15 +106,15 @@
                         <tbody>
                             {% for item in evidence_list %}
                             <tr>
-                                <td>{{ item.EvidenceID }}</td>
-                                <td><strong>{{ item.CaseID }}</strong></td>
-                                <td>{{ item.EvidenceType }}</td>
-                                <td>{{ item.Status }}</td>
+                                <td>{{ item.evidenceid }}</td>
+                                <td><strong>{{ item.caseid }}</strong></td>
+                                <td>{{ item.evidencetype }}</td>
+                                <td>{{ item.status }}</td>
                                 <td>
-                                    {% if item.ImagePath %}
+                                    {% if item.imagepath %}
                                         <div style="display: flex; gap: 5px;">
-                                            <a href="{{ url_for('static', filename='uploads/evidence/' + item.ImagePath) }}" target="_blank" class="btn-view">View</a>
-                                            <a href="{{ url_for('static', filename='uploads/evidence/' + item.ImagePath) }}" download class="btn-download">↓</a>
+                                            <a href="{{ url_for('static', filename='uploads/evidence/' + item.imagepath) }}" target="_blank" class="btn-view">View</a>
+                                            <a href="{{ url_for('static', filename='uploads/evidence/' + item.imagepath) }}" download class="btn-download">↓</a>
                                         </div>
                                     {% else %}
                                         <span style="color: #7f8c8d; font-size: 12px;">No Photo</span>

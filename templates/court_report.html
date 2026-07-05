@@ -33,7 +33,7 @@
                 <select id="case_id" name="case_id" required>
                     <option value="">-- Choose Case --</option>
                     {% for case in cases %}
-                        <option value="{{ case.CaseID }}">{{ case.CaseID }}</option>
+                        <option value="{{ case.caseid }}">{{ case.caseid }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -42,7 +42,7 @@
                 <select id="prepared_by" name="prepared_by" required>
                     <option value="">-- Select Officer --</option>
                     {% for doc in doctors %}
-                        <option value="{{ doc.StaffID }}">{{ doc.FullName }}</option>
+                        <option value="{{ doc.staffid }}">{{ doc.fullname }}</option>
                     {% endfor %}
                 </select>
             </div>

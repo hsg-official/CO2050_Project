@@ -102,25 +102,25 @@
             <tbody>
     {% for case in cases %}
     <tr>
-        <td><strong>{{ case.CaseID }}</strong></td>
-        <td>{{ case.PatientName }}</td>
-        <td>{{ case.JMOName }}</td>
-        <td>{{ case.CaseType }}</td>
-        <td>{{ case.IncidentDate }}</td>
+        <td><strong>{{ case.caseid }}</strong></td>
+        <td>{{ case.patientname }}</td>
+        <td>{{ case.jmoname }}</td>
+        <td>{{ case.casetype }}</td>
+        <td>{{ case.incidentdate }}</td>
         <td>
-            {% if role == 'Admin' or (role in ['Doctor', 'JMO'] and case.AssignedJMO == current_user_id) %}
+            {% if role == 'Admin' or (role in ['Doctor', 'JMO'] and case.assignedjmo == current_user_id) %}
                 <form action="{{ url_for('update_case_status') }}" method="POST" style="display: flex; gap: 5px; margin: 0;">
-                    <input type="hidden" name="case_id" value="{{ case.CaseID }}">
+                    <input type="hidden" name="case_id" value="{{ case.caseid }}">
                     <select name="case_status" style="padding: 5px; border-radius: 4px; border: 1px solid #bdc3c7;">
-                        <option value="Open" {% if case.CaseStatus == 'Open' %}selected{% endif %}>Open</option>
-                        <option value="Pending Investigation" {% if case.CaseStatus == 'Pending Investigation' %}selected{% endif %}>Pending</option>
-                        <option value="Closed" {% if case.CaseStatus == 'Closed' %}selected{% endif %}>Closed</option>
+                        <option value="Open" {% if case.casestatus == 'Open' %}selected{% endif %}>Open</option>
+                        <option value="Pending Investigation" {% if case.casestatus == 'Pending Investigation' %}selected{% endif %}>Pending</option>
+                        <option value="Closed" {% if case.casestatus == 'Closed' %}selected{% endif %}>Closed</option>
                     </select>
                     <button type="submit" style="padding: 5px 10px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Save</button>
                 </form>
             {% else %}
-                <span class="status-badge status-{{ case.CaseStatus.split(' ')[0] }}">
-                    {{ case.CaseStatus }}
+                <span class="status-badge status-{{ case.casestatus.split(' ')[0] }}">
+                    {{ case.casestatus }}
                 </span>
             {% endif %}
         </td>

@@ -72,8 +72,8 @@
     <script>
         // 1. Process Monthly Data
         const rawMonthlyData = {{ monthly_data | tojson }};
-        const monthLabels = rawMonthlyData.map(item => item.MonthLabel).reverse();
-        const monthCounts = rawMonthlyData.map(item => item.CaseCount).reverse();
+        const monthLabels = rawMonthlyData.map(item => item.monthlabel).reverse();
+        const monthCounts = rawMonthlyData.map(item => item.casecount).reverse();
 
         new Chart(document.getElementById('monthlyChart'), {
             type: 'bar',
@@ -91,7 +91,7 @@
 
         // 2. Process Incident Type Data
         const rawTypeData = {{ case_type_data | tojson }};
-        const typeLabels = rawTypeData.map(item => item.CaseType);
+        const typeLabels = rawTypeData.map(item => item.casetype);
         const typeCounts = rawTypeData.map(item => item.count);
 
         new Chart(document.getElementById('typeChart'), {

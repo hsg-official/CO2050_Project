@@ -1,7 +1,8 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
 from werkzeug.utils import secure_filename
-import mysql.connector
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import uuid # Used to generate unique random names for files
 
 app = Flask(__name__)
@@ -19,15 +20,21 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Database connection configuration
-db_config = {
-    'host': 'localhost',
-    'user': 'root', # Change if your MySQL username is different
-    'password': 'Hsg20041113', # Add your MySQL password if you have one
-    'database': 'forensic_db'
-}
+# --- SUPABASE CONNECTION SETUP ---
+DB_HOST = "aws-1-ap-southeast-2.pooler.supabase.com" # Replace with your Supabase Host
+DB_NAME = "postgres"
+DB_USER = "postgres.wutuohcipwrsxyjgbaxd" # Replace with your Supabase User
+DB_PASSWORD = "H$g2OO41113" # Use the password you created for Supabase, NOT your old local password
+DB_PORT = "5432" # Or 5432 depending on your string
 
 def get_db_connection():
-    return mysql.connector.connect(**db_config)
+    return psycopg2.connect(
+        host=DB_HOST,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        port=DB_PORT
+    )
 
 def log_action(user_id, action_description):
     """Utility function to easily record system events."""
@@ -48,7 +55,7 @@ def login():
         password = request.form['password']
 
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         
         # Checking credentials against the database 
         cursor.execute('SELECT * FROM Users WHERE Username = %s AND PasswordHash = %s', (username, password))
@@ -60,12 +67,12 @@ def login():
         if account:
             # Create session data [cite: 60, 61]
             session['loggedin'] = True
-            session['id'] = account['UserID']
-            session['username'] = account['Username']
-            session['role'] = account['UserRole']
-            session['staff_id'] = account['StaffID']
+            session['id'] = account['userid']
+            session['username'] = account['username']
+            session['role'] = account['userrole']
+            session['staff_id'] = account['staffid']
 
-            log_action(account['UserID'], "User logged into the system.")
+            log_action(account['userid'], "User logged into the system.")
             return redirect(url_for('dashboard'))
         else:
             flash('Incorrect username or password!')
@@ -76,7 +83,7 @@ def login():
 def dashboard():
     if 'loggedin' in session:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         
         # Fetch a quick statistic for the dashboard (e.g., Total Open Cases)
         cursor.execute("SELECT COUNT(*) as open_cases FROM MedicoLegalCase WHERE CaseStatus = 'Open'")
@@ -151,7 +158,7 @@ def create_case():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
         case_id = request.form['case_id']
@@ -186,18 +193,16 @@ def create_case():
 
     cursor.close()
     conn.close()
-
     return render_template('create_case.html', patients=patients, doctors=doctors, role=session['role'])
 
 @app.route('/view_cases', methods=['GET'])
 def view_cases():
     if 'loggedin' not in session:
         return redirect(url_for('login'))
-    
     search_query = request.args.get('search', '')
     
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     # We use WHERE 1=1 so we can easily append AND conditions dynamically
     query = """
@@ -263,7 +268,7 @@ def postmortem():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
         case_id = request.form['case_id']
@@ -304,7 +309,7 @@ def manage_evidence():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
         case_id = request.form['case_id']
@@ -374,7 +379,7 @@ def lab_test():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
         evidence_id = request.form['evidence_id']
@@ -420,7 +425,7 @@ def court_report():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
         case_id = request.form['case_id']
@@ -458,7 +463,7 @@ def manage_staff():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
         full_name = request.form['full_name']
@@ -515,7 +520,7 @@ def edit_staff(staff_id):
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
         new_role = request.form['role']
@@ -578,7 +583,7 @@ def audit_logs():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     # Join tables to get readable names instead of just User IDs
     # ORDER BY LogTime DESC ensures the newest actions are at the top
@@ -607,7 +612,7 @@ def manage_patients():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute("SELECT * FROM Patient ORDER BY PatientID DESC")
     patients = cursor.fetchall()
     cursor.close()
@@ -621,7 +626,7 @@ def edit_patient(patient_id):
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
         full_name = request.form['full_name']
@@ -655,7 +660,7 @@ def reports():
         return redirect(url_for('dashboard'))
 
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     # 1. Case Status Breakdown (Open vs Pending vs Closed)
     cursor.execute("SELECT CaseStatus, COUNT(*) as count FROM MedicoLegalCase GROUP BY CaseStatus")

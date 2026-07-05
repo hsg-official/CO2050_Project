@@ -119,7 +119,7 @@
                 <select id="patient_id" name="patient_id" required>
                     <option value="">-- Choose a Patient --</option>
                     {% for patient in patients %}
-                        <option value="{{ patient.PatientID }}">{{ patient.FullName }} (ID: {{ patient.PatientID }})</option>
+                        <option value="{{ patient.patientid }}">{{ patient.fullname }} (ID: {{ patient.patientid }})</option>
                     {% endfor %}
                 </select>
             </div>
@@ -129,7 +129,7 @@
                 <select id="assigned_jmo" name="assigned_jmo" required>
                     <option value="">-- Choose an Officer --</option>
                     {% for doc in doctors %}
-                        <option value="{{ doc.StaffID }}">{{ doc.FullName }} ({{ doc.Role }})</option>
+                        <option value="{{ doc.staffid }}">{{ doc.fullname }} ({{ doc.role }})</option>
                     {% endfor %}
                 </select>
             </div>

@@ -43,10 +43,10 @@
                     {% for log in logs %}
                     <tr>
                         <td class="timestamp">{{ log.logtime }}</td>
-                        <td><strong>{{ log.fullname if log.fullname else 'System/Deleted User' }}</strong></td>
+                        <td><strong>{{ log.fullname | default('System/Deleted User') }}</strong></td>
                         <td>
-                            <span class="role-badge">{{ log.role if log.role else 'N/A' }}</span><br>
-                            <span style="font-size: 12px; color: #7f8c8d;">@{{ log.username if log.username else 'unknown' }}</span>
+                            <span class="role-badge">{{ log.role | default('N/A') }}</span><br>
+                            <span style="font-size: 12px; color: #7f8c8d;">@{{ log.username | default('unknown') }}</span>
                         </td>
                         <td class="log-action">{{ log.action }}</td>
                     </tr>

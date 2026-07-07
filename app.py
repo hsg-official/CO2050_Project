@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory
 from werkzeug.utils import secure_filename
 import psycopg2
@@ -38,15 +39,24 @@ def get_db_connection():
 
 def log_action(user_id, action_description):
     """Utility function to easily record system events."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO AuditLog (UserID, Action) VALUES (%s, %s)", 
-        (user_id, action_description)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute(
+            "INSERT INTO auditlog (userid, action, logtime) VALUES (%s, %s, %s)",
+            (user_id, action_description, current_time)
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"Audit log error: {e}")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conn is not None:
+            conn.close()
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -89,6 +99,17 @@ def dashboard():
         cursor.execute("SELECT COUNT(*) as open_cases FROM MedicoLegalCase WHERE CaseStatus = 'Open'")
         result = cursor.fetchone()
         open_cases = result['open_cases'] if result else 0
+
+        cursor.execute("""
+            SELECT a.logid AS logid, a.action AS action, a.logtime AS logtime,
+                   u.username AS username, s.fullname AS fullname, s.role AS role
+            FROM auditlog a
+            LEFT JOIN users u ON a.userid = u.userid
+            LEFT JOIN staff s ON u.staffid = s.staffid
+            ORDER BY a.logtime DESC
+            LIMIT 5
+        """)
+        recent_activity = cursor.fetchall()
         
         cursor.close()
         conn.close()
@@ -99,7 +120,8 @@ def dashboard():
         return render_template('dashboard.html', 
                                username=session['username'], 
                                role=session['role'], 
-                               open_cases=open_cases)
+                               open_cases=open_cases,
+                               recent_activity=recent_activity)
     
     return redirect(url_for('login'))
 
@@ -166,19 +188,19 @@ def create_case():
         assigned_jmo = request.form['assigned_jmo']
         case_type = request.form['case_type']
         incident_date = request.form['incident_date']
+        policestation = request.form.get('policestation')
         case_status = request.form['case_status']
 
         try:
-            cursor.execute(
-                '''INSERT INTO MedicoLegalCase 
-                   (CaseID, PatientID, AssignedJMO, CaseType, IncidentDate, CaseStatus) 
-                   VALUES (%s, %s, %s, %s, %s, %s)''',
-                (case_id, patient_id, assigned_jmo, case_type, incident_date, case_status)
-            )
+            # Notice we added 'policestation' to the columns, and an extra '%s' to the VALUES
+            cursor.execute("""
+                INSERT INTO medicolegalcase (patientid, casetype, incidentdate, assignedjmo, casestatus, policestation)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """,(patient_id, case_type, incident_date, assigned_jmo, case_status, policestation))
             conn.commit()
             log_action(session['id'], "Created a new medico-legal case.")
             flash('Medico-Legal Case created successfully!')
-        except mysql.connector.Error as err:
+        except psycopg2.Error as err:
             # This catches errors like trying to use a CaseID that already exists
             flash(f'Database Error: {err}')
         
@@ -199,35 +221,40 @@ def create_case():
 def view_cases():
     if 'loggedin' not in session:
         return redirect(url_for('login'))
+        
     search_query = request.args.get('search', '')
     
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
-    # We use WHERE 1=1 so we can easily append AND conditions dynamically
+    # 🟢 1. ADDED c.policestation to the SELECT list
+    # 🟢 2. LOWERCASED columns for Supabase/PostgreSQL compatibility
     query = """
-        SELECT c.CaseID, p.FullName AS PatientName, s.FullName AS JMOName, 
-               c.CaseType, c.IncidentDate, c.CaseStatus, c.AssignedJMO
-        FROM MedicoLegalCase c
-        LEFT JOIN Patient p ON c.PatientID = p.PatientID
-        LEFT JOIN Staff s ON c.AssignedJMO = s.StaffID
+        SELECT c.caseid, p.fullname AS patientname, s.fullname AS jmoname, 
+               c.casetype, c.incidentdate, c.policestation, c.casestatus, c.assignedjmo
+        FROM medicolegalcase c
+        LEFT JOIN patient p ON c.patientid = p.patientid
+        LEFT JOIN staff s ON c.assignedjmo = s.staffid
         WHERE 1=1
     """
     params = []
     
     # 🚨 Data-Level Security: If the user is a Doctor, ONLY show their assigned cases
     if session['role'] in ['Doctor', 'JMO']:
-        query += " AND c.AssignedJMO = %s"
+        query += " AND c.assignedjmo = %s"
         params.append(session['staff_id'])
         
     # Apply search filter if one exists
     if search_query:
-        query += " AND (c.CaseID LIKE %s OR p.FullName LIKE %s OR c.CaseStatus LIKE %s)"
+        # 🟢 3. ADDED CAST(c.caseid AS TEXT) and changed LIKE to ILIKE for PostgreSQL
+        query += " AND (CAST(c.caseid AS TEXT) LIKE %s OR p.fullname ILIKE %s OR c.casestatus ILIKE %s)"
         like_pattern = f"%{search_query}%"
         params.extend([like_pattern, like_pattern, like_pattern])
         
     cursor.execute(query, tuple(params))
     cases = cursor.fetchall()
+
+    log_action(session['id'], "Viewed the cases list.")
     
     cursor.close()
     conn.close()
@@ -340,9 +367,7 @@ def manage_evidence():
             (case_id, evidence_type, storage_location, collected_by, collection_date, status, filename)
         )
         conn.commit()
-        
-        # Log the action if your helper function is active
-        # log_action(session['id'], f"Logged evidence {evidence_type} for case {case_id}")
+        log_action(session['id'], f"Logged evidence {evidence_type} for case {case_id}")
         
         flash('Evidence and image logged securely!')
         return redirect(url_for('manage_evidence'))
@@ -362,6 +387,8 @@ def manage_evidence():
         ORDER BY e.EvidenceID DESC
     """)
     evidence_list = cursor.fetchall()
+
+    log_action(session['id'], "Viewed evidence management.")
 
     cursor.close()
     conn.close()
@@ -414,46 +441,6 @@ def lab_test():
 
     return render_template('lab_test.html', evidence_items=evidence_items, lab_staff=lab_staff)
 
-@app.route('/court_report', methods=['GET', 'POST'])
-def court_report():
-    if 'loggedin' not in session:
-        return redirect(url_for('login'))
-    
-    # Restrict to doctors, JMOs, and admins
-    if session['role'] not in ['Admin', 'Doctor', 'JMO']:
-        flash("You do not have permission to generate court reports.")
-        return redirect(url_for('dashboard'))
-
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-    if request.method == 'POST':
-        case_id = request.form['case_id']
-        prepared_by = request.form['prepared_by']
-        submission_date = request.form['submission_date']
-        status = request.form['status']
-
-        cursor.execute(
-            '''INSERT INTO CourtReport (CaseID, PreparedBy, SubmissionDate, Status) 
-               VALUES (%s, %s, %s, %s)''',
-            (case_id, prepared_by, submission_date, status)
-        )
-        conn.commit()
-        log_action(session['id'], "Generated a court report.")
-        flash('Court report logged successfully!')
-        return redirect(url_for('court_report'))
-
-    # GET request data
-    cursor.execute("SELECT CaseID FROM MedicoLegalCase")
-    cases = cursor.fetchall()
-
-    cursor.execute("SELECT StaffID, FullName FROM Staff WHERE Role IN ('Doctor', 'JMO', 'Admin')")
-    doctors = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
-    return render_template('court_report.html', cases=cases, doctors=doctors)
 
 @app.route('/manage_staff', methods=['GET', 'POST'])
 def manage_staff():
@@ -485,21 +472,21 @@ def manage_staff():
         try:
             # 1. Insert into Staff Table
             cursor.execute(
-                "INSERT INTO Staff (FullName, Role, ContactNo) VALUES (%s, %s, %s)",
+                "INSERT INTO staff (fullname, role, contactno) VALUES (%s, %s, %s) RETURNING staffid",
                 (full_name, role, contact_no)
             )
-            new_staff_id = cursor.lastrowid # Grabs the ID that MySQL just auto-generated
+            new_staff_id = cursor.fetchone()['staffid']
 
             # 2. Insert into Users Table
             cursor.execute(
-                "INSERT INTO Users (StaffID, Username, PasswordHash, UserRole) VALUES (%s, %s, %s, %s)",
+                "INSERT INTO users (staffid, username, passwordhash, userrole) VALUES (%s, %s, %s, %s)",
                 (new_staff_id, username, password, user_role)
             )
             conn.commit()
             log_action(session['id'], "Created a new staff account.")
             flash(f'{role} account created successfully!')
             
-        except mysql.connector.Error as err:
+        except psycopg2.Error as err:
             conn.rollback() # If one insert fails, cancel both to prevent broken data
             flash(f'Database Error: Username might already be taken. ({err})')
 
@@ -508,6 +495,8 @@ def manage_staff():
     # GET request: Fetch a list of all current staff to display on the page
     cursor.execute("SELECT s.StaffID, s.FullName, s.Role, u.Username FROM Staff s LEFT JOIN Users u ON s.StaffID = u.StaffID")
     staff_list = cursor.fetchall()
+
+    log_action(session['id'], "Viewed staff management page.")
     
     cursor.close()
     conn.close()
@@ -588,15 +577,20 @@ def audit_logs():
     # Join tables to get readable names instead of just User IDs
     # ORDER BY LogTime DESC ensures the newest actions are at the top
     query = """
-        SELECT a.LogID, a.Action, a.LogTime, u.Username, s.FullName, s.Role
-        FROM AuditLog a
-        LEFT JOIN Users u ON a.UserID = u.UserID
-        LEFT JOIN Staff s ON u.StaffID = s.StaffID
-        ORDER BY a.LogTime DESC 
+        SELECT a.logid AS logid, a.action AS action, a.logtime AS logtime,
+               u.username AS username, s.fullname AS fullname, s.role AS role
+        FROM auditlog a
+        LEFT JOIN users u ON a.userid = u.userid
+        LEFT JOIN staff s ON u.staffid = s.staffid
+        ORDER BY a.logtime DESC
         LIMIT 200
     """
     cursor.execute(query)
     logs = cursor.fetchall()
+
+    print("AUDIT LOGS DEBUG:", logs)
+    if logs:
+        print("AUDIT LOG KEYS:", list(logs[0].keys()))
 
     log_action(session['id'], "Viewed audit logs.")
     
@@ -615,6 +609,9 @@ def manage_patients():
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute("SELECT * FROM Patient ORDER BY PatientID DESC")
     patients = cursor.fetchall()
+
+    log_action(session['id'], "Viewed patient management page.")
+
     cursor.close()
     conn.close()
 
@@ -672,10 +669,10 @@ def reports():
 
     # 3. Monthly Statistics (Grouping by Year-Month)
     cursor.execute("""
-        SELECT DATE_FORMAT(IncidentDate, '%Y-%m') as MonthLabel, COUNT(*) as CaseCount 
-        FROM MedicoLegalCase 
-        GROUP BY MonthLabel 
-        ORDER BY MonthLabel DESC 
+        SELECT TO_CHAR(incidentdate, 'YYYY-MM') as monthlabel, COUNT(*) as casecount
+        FROM medicolegalcase
+        GROUP BY monthlabel
+        ORDER BY monthlabel DESC
         LIMIT 6
     """)
     monthly_data = cursor.fetchall()
@@ -686,6 +683,8 @@ def reports():
 
     cursor.execute("SELECT COUNT(*) as pending_reports FROM CourtReport WHERE Status != 'Submitted'")
     pending_reports = cursor.fetchone()['pending_reports']
+
+    log_action(session['id'], "Viewed reports dashboard.")
 
     cursor.close()
     conn.close()
@@ -705,6 +704,108 @@ def index():
         return redirect(url_for('dashboard'))
     # Otherwise, show the beautiful animated landing page
     return render_template('index.html')
+
+@app.route('/patient_report/<int:patient_id>')
+def patient_report(patient_id):
+    # 1. Security Check: Only allow authorized roles
+    if not session.get('loggedin'):
+        return redirect(url_for('login'))
+        
+    user_role = session.get('role')
+    if user_role not in ['Admin', 'Doctor', 'JMO']:
+        flash('You do not have permission to view or generate patient reports.')
+        return redirect(url_for('dashboard'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        # 2. Fetch Patient Demographics (Changed 'patients' to 'patient')
+        cursor.execute("SELECT * FROM patient WHERE patientid = %s", (patient_id,))
+        patient = cursor.fetchone()
+
+        if not patient:
+            flash('Patient record not found.')
+            return redirect(url_for('dashboard'))
+
+        # 3. Fetch Associated Medico-Legal Case Details (Changed 'medicolegalcases' to 'medicolegalcase')
+        cursor.execute("SELECT * FROM medicolegalcase WHERE patientid = %s", (patient_id,))
+        cases = cursor.fetchall()
+
+        # 4. Fetch All Evidence Items linked to this patient's cases
+        evidence_items = []
+        if cases:
+            case_ids = [str(c['caseid']) for c in cases]
+            format_strings = ','.join(['%s'] * len(case_ids))
+            query = f"SELECT * FROM evidence WHERE caseid IN ({format_strings})"
+            cursor.execute(query, tuple(case_ids))
+            evidence_items = cursor.fetchall()
+
+    except Exception as e:
+        print(f"Error generating report: {e}") # This prints the exact error to your terminal!
+        flash('An error occurred while compiling the report.')
+        return redirect(url_for('dashboard'))
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+    log_action(session['id'], f"Generated patient report for patient {patient_id}.")
+
+    # 5. Render the dedicated print/report view
+    return render_template('patient_report.html', patient=patient, cases=cases, evidence=evidence_items)
+
+@app.route('/court_report/<int:case_id>')
+def court_report(case_id):
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+        
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        # 1. Fetch the exact Case Details
+        cursor.execute("""
+            SELECT c.caseid, c.casetype, c.incidentdate, c.policestation, c.casestatus, c.assignedjmo, 
+                   s.fullname AS jmoname, s.role AS jmorole
+            FROM medicolegalcase c
+            LEFT JOIN staff s ON c.assignedjmo = s.staffid
+            WHERE c.caseid = %s
+        """, (case_id,))
+        case = cursor.fetchone()
+        
+        if not case:
+            flash('Case not found.')
+            return redirect(url_for('view_cases'))
+
+        # 2. Fetch the associated Patient/Victim Demographics
+        # We need another query to get patient info using the case's patientid
+        cursor.execute("""
+            SELECT p.* FROM patient p
+            JOIN medicolegalcase c ON p.patientid = c.patientid
+            WHERE c.caseid = %s
+        """, (case_id,))
+        patient = cursor.fetchone()
+
+        # 3. Fetch all Evidence linked to this specific case
+        cursor.execute("SELECT * FROM evidence WHERE caseid = %s", (case_id,))
+        evidence_items = cursor.fetchall()
+        
+    except Exception as e:
+        print(f"Error generating court report: {e}")
+        flash('Database error while compiling the court report.')
+        return redirect(url_for('view_cases'))
+    finally:
+        cursor.close()
+        conn.close()
+
+    log_action(session['id'], f"Generated court report for case {case_id}.")
+
+    # Import datetime to timestamp the report
+    from datetime import datetime
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    return render_template('court_report.html', case=case, patient=patient, evidence=evidence_items, current_time=current_time)
 
 if __name__ == '__main__':
     app.run(debug=True)

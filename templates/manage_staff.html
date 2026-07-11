@@ -54,13 +54,21 @@
                         <input type="text" id="full_name" name="full_name" required>
                     </div>
                     <div class="form-group">
-                        <label for="role">Department Role</label>
-                        <select id="role" name="role" required>
-                            <option value="Doctor">Doctor</option>
-                            <option value="JMO">Judicial Medical Officer (JMO)</option>
-                            <option value="Laboratory Staff">Laboratory Staff</option>
-                            <option value="Clerical Officer">Clerical Officer</option>
-                            <option value="Admin">System Administrator</option>
+                        <label for="deptid">Department</label>
+                        <select id="deptid" name="deptid" required>
+                            <option value="">-- Choose a Department --</option>
+                            {% for department in departments %}
+                                <option value="{{ department.deptid }}">{{ department.deptname }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="roleid">Role</label>
+                        <select id="roleid" name="roleid" required>
+                            <option value="">-- Choose a Role --</option>
+                            {% for role in roles %}
+                                <option value="{{ role.roleid }}">{{ role.rolename }} (Level {{ role.accesslevel }})</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="form-group">
@@ -100,7 +108,7 @@
     <tr>
         <td>{{ person.staffid }}</td>
         <td><strong>{{ person.fullname }}</strong></td>
-        <td><span class="role-badge">{{ person.role }}</span></td>
+        <td><span class="role-badge">{{ person.rolename }}{% if person.deptname %} / {{ person.deptname }}{% endif %}</span></td>
         <td>{{ person.username if person.username else 'No Login Access' }}</td>
         
         <td>

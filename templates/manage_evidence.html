@@ -56,22 +56,43 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="evidence_type">Evidence Type</label>
-                        <input type="text" id="evidence_type" name="evidence_type" required>
+                        <label for="categoryid">Evidence Category</label>
+                        <select id="categoryid" name="categoryid" required>
+                            <option value="">-- Select Category --</option>
+                            {% for category in categories %}
+                                <option value="{{ category.categoryid }}">{{ category.categoryname }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="evidence_image">Upload Photograph (Optional)</label>
                         <input type="file" id="evidence_image" name="evidence_image" accept="image/*">
                     </div>
                     <div class="form-group">
-                        <label for="storage_location">Storage Location</label>
-                        <input type="text" id="storage_location" name="storage_location" required>
+                        <label for="lockerid">Storage Locker</label>
+                        <select id="lockerid" name="lockerid" required>
+                            <option value="">-- Select Locker --</option>
+                            {% for locker in lockers %}
+                                <option value="{{ locker.lockerid }}">{{ locker.roomname }} ({{ locker.temperaturezone }})</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="collected_by">Collected By</label>
                         <select id="collected_by" name="collected_by" required>
                             <option value="">-- Select Staff --</option>
-                            {% for person in staff %}<option value="{{ person.staffid }}">{{ person.fullname }} ({{ person.role }})</option>{% endfor %}
+                            {% for person in staff %}
+                                <option value="{{ person.staffid }}">{{ person.fullname }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="received_by">Received By</label>
+                        <select id="received_by" name="received_by" required>
+                            <option value="">-- Select Staff --</option>
+                            {% for person in staff %}
+                                <option value="{{ person.staffid }}">{{ person.fullname }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="form-group">
@@ -108,7 +129,7 @@
                             <tr>
                                 <td>{{ item.evidenceid }}</td>
                                 <td><strong>{{ item.caseid }}</strong></td>
-                                <td>{{ item.evidencetype }}</td>
+                                <td>{{ item.categoryname or 'Uncategorized' }}</td>
                                 <td>{{ item.status }}</td>
                                 <td>
                                     {% if item.imagepath %}

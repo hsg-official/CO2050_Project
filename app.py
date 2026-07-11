@@ -11,11 +11,14 @@ app.secret_key = 'forensic_system_secret' # Required for session management
 
 # Configure File Uploads
 UPLOAD_FOLDER = 'static/uploads/evidence'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+DOCUMENT_UPLOAD_FOLDER = 'static/uploads/documents'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'doc', 'docx', 'txt', 'csv', 'xlsx', 'xls'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['DOCUMENT_UPLOAD_FOLDER'] = DOCUMENT_UPLOAD_FOLDER
 
 # Ensure the upload folder exists when the app starts
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(DOCUMENT_UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -67,19 +70,27 @@ def login():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # Checking credentials against the database 
-        cursor.execute('SELECT * FROM Users WHERE Username = %s AND PasswordHash = %s', (username, password))
+        # Checking credentials against the database
+        cursor.execute(
+            """
+            SELECT u.userid, u.username, u.staffid, s.fullname, r.rolename
+            FROM users u
+            JOIN staff s ON u.staffid = s.staffid
+            JOIN role r ON s.roleid = r.roleid
+            WHERE u.username = %s AND u.passwordhash = %s
+            """,
+            (username, password)
+        )
         account = cursor.fetchone()
-        
+
         cursor.close()
         conn.close()
 
         if account:
-            # Create session data [cite: 60, 61]
             session['loggedin'] = True
             session['id'] = account['userid']
             session['username'] = account['username']
-            session['role'] = account['userrole']
+            session['role'] = account['rolename']
             session['staff_id'] = account['staffid']
 
             log_action(account['userid'], "User logged into the system.")
@@ -96,16 +107,24 @@ def dashboard():
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
         # Fetch a quick statistic for the dashboard (e.g., Total Open Cases)
-        cursor.execute("SELECT COUNT(*) as open_cases FROM MedicoLegalCase WHERE CaseStatus = 'Open'")
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS open_cases
+            FROM medicolegalcase m
+            JOIN casestatus cs ON m.statusid = cs.statusid
+            WHERE cs.statusname = 'Open'
+            """
+        )
         result = cursor.fetchone()
         open_cases = result['open_cases'] if result else 0
 
         cursor.execute("""
             SELECT a.logid AS logid, a.action AS action, a.logtime AS logtime,
-                   u.username AS username, s.fullname AS fullname, s.role AS role
+                   u.username AS username, s.fullname AS fullname, r.rolename AS role
             FROM auditlog a
             LEFT JOIN users u ON a.userid = u.userid
             LEFT JOIN staff s ON u.staffid = s.staffid
+            LEFT JOIN role r ON s.roleid = r.roleid
             ORDER BY a.logtime DESC
             LIMIT 5
         """)
@@ -145,26 +164,45 @@ def register_patient():
 
     if request.method == 'POST':
         full_name = request.form['full_name']
-        age = request.form['age']
+        date_of_birth = request.form['date_of_birth']
         gender = request.form['gender']
         address = request.form['address']
-        contact_info = request.form['contact_info']
+        contact_no = request.form['contact_no']
+        next_of_kin_name = request.form['next_of_kin_name']
+        next_of_kin_relationship = request.form['next_of_kin_relationship']
+        next_of_kin_contact = request.form['next_of_kin_contact']
+        condition_details = request.form['condition_details']
 
         conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Insert the new patient into the database
-        cursor.execute(
-            'INSERT INTO Patient (FullName, Age, Gender, Address, ContactInfo) VALUES (%s, %s, %s, %s, %s)',
-            (full_name, age, gender, address, contact_info)
-        )
-        conn.commit()
-        log_action(session['id'], "Registered a new patient.")
-        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        try:
+            cursor.execute(
+                "INSERT INTO patient (fullname, dateofbirth, gender, address, contactno) VALUES (%s, %s, %s, %s, %s) RETURNING patientid",
+                (full_name, date_of_birth, gender, address, contact_no)
+            )
+            new_patient_id = cursor.fetchone()['patientid']
+
+            cursor.execute(
+                "INSERT INTO nextofkin (patientid, fullname, relationship, contactno) VALUES (%s, %s, %s, %s)",
+                (new_patient_id, next_of_kin_name, next_of_kin_relationship, next_of_kin_contact)
+            )
+
+            cursor.execute(
+                "INSERT INTO patientmedicalhistory (patientid, conditiondetails) VALUES (%s, %s)",
+                (new_patient_id, condition_details)
+            )
+
+            conn.commit()
+            log_action(session['id'], "Registered a new patient.")
+            flash('Patient registered successfully!')
+        except psycopg2.Error as err:
+            conn.rollback()
+            flash(f'Database Error: {err}')
+
         cursor.close()
         conn.close()
 
-        flash('Patient registered successfully!')
         return redirect(url_for('register_patient'))
 
     return render_template('register_patient.html', role=session['role'])
@@ -183,39 +221,66 @@ def create_case():
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
-        case_id = request.form['case_id']
-        patient_id = request.form['patient_id']
-        assigned_jmo = request.form['assigned_jmo']
-        case_type = request.form['case_type']
-        incident_date = request.form['incident_date']
-        policestation = request.form.get('policestation')
-        case_status = request.form['case_status']
-
         try:
-            # Notice we added 'policestation' to the columns, and an extra '%s' to the VALUES
+            patient_id = int(request.form['patient_id'])
+            case_type_id = int(request.form['casetypeid'])
+            status_id = int(request.form['statusid'])
+            assigned_doctor = int(request.form['assigneddoctor'])
+            officer_id = int(request.form['officerid'])
+            location_id = int(request.form.get('locationid', 0))
+            incident_date = request.form['incident_date']
+
             cursor.execute("""
-                INSERT INTO medicolegalcase (patientid, casetype, incidentdate, assignedjmo, casestatus, policestation)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """,(patient_id, case_type, incident_date, assigned_jmo, case_status, policestation))
+                INSERT INTO medicolegalcase (
+                    patientid, casetypeid, statusid, assigneddoctor, officerid, locationid, incidentdate
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (patient_id, case_type_id, status_id, assigned_doctor, officer_id, location_id, incident_date))
             conn.commit()
             log_action(session['id'], "Created a new medico-legal case.")
             flash('Medico-Legal Case created successfully!')
-        except psycopg2.Error as err:
-            # This catches errors like trying to use a CaseID that already exists
+        except (ValueError, psycopg2.Error) as err:
             flash(f'Database Error: {err}')
         
+        cursor.close()
+        conn.close()
         return redirect(url_for('create_case'))
 
     # For GET requests: Fetch data for the dropdown menus
-    cursor.execute("SELECT PatientID, FullName FROM Patient")
+    cursor.execute("SELECT patientid, fullname FROM patient")
     patients = cursor.fetchall()
 
-    cursor.execute("SELECT StaffID, FullName, Role FROM Staff WHERE Role IN ('Doctor', 'JMO', 'Admin')")
+    cursor.execute("""
+        SELECT s.staffid, s.fullname
+        FROM staff s
+        JOIN role r ON s.roleid = r.roleid
+        WHERE r.rolename IN ('Doctor', 'JMO')
+    """)
     doctors = cursor.fetchall()
+
+    cursor.execute("SELECT casetypeid, casetypename FROM casetype")
+    case_types = cursor.fetchall()
+
+    cursor.execute("SELECT statusid, statusname FROM casestatus")
+    case_statuses = cursor.fetchall()
+
+    cursor.execute("SELECT officerid, fullname, badgenumber FROM investigatingofficer")
+    officers = cursor.fetchall()
+
+    cursor.execute("SELECT stationid, stationname FROM policestation")
+    policestations = cursor.fetchall()
 
     cursor.close()
     conn.close()
-    return render_template('create_case.html', patients=patients, doctors=doctors, role=session['role'])
+    return render_template(
+        'create_case.html',
+        patients=patients,
+        doctors=doctors,
+        case_types=case_types,
+        case_statuses=case_statuses,
+        officers=officers,
+        policestations=policestations,
+        role=session['role']
+    )
 
 @app.route('/view_cases', methods=['GET'])
 def view_cases():
@@ -230,18 +295,22 @@ def view_cases():
     # 🟢 1. ADDED c.policestation to the SELECT list
     # 🟢 2. LOWERCASED columns for Supabase/PostgreSQL compatibility
     query = """
-        SELECT c.caseid, p.fullname AS patientname, s.fullname AS jmoname, 
-               c.casetype, c.incidentdate, c.policestation, c.casestatus, c.assignedjmo
+        SELECT c.caseid, p.fullname AS patientname, s.fullname AS jmoname,
+               ct.casetypename AS casetype, c.incidentdate, ps.stationname AS policestation, cs.statusname AS casestatus,
+               c.assigneddoctor AS assignedjmo
         FROM medicolegalcase c
         LEFT JOIN patient p ON c.patientid = p.patientid
-        LEFT JOIN staff s ON c.assignedjmo = s.staffid
+        LEFT JOIN staff s ON c.assigneddoctor = s.staffid
+        LEFT JOIN casetype ct ON c.casetypeid = ct.casetypeid
+        LEFT JOIN policestation ps ON c.locationid = ps.stationid
+        LEFT JOIN casestatus cs ON c.statusid = cs.statusid
         WHERE 1=1
     """
     params = []
     
     # 🚨 Data-Level Security: If the user is a Doctor, ONLY show their assigned cases
     if session['role'] in ['Doctor', 'JMO']:
-        query += " AND c.assignedjmo = %s"
+        query += " AND c.assigneddoctor = %s"
         params.append(session['staff_id'])
         
     # Apply search filter if one exists
@@ -300,31 +369,121 @@ def postmortem():
     if request.method == 'POST':
         case_id = request.form['case_id']
         doctor_id = request.form['doctor_id']
-        exam_date = request.form['examination_date']
+        icd10_code = request.form['icd10code']
+        date_of_exam = request.form['date_of_exam']
         findings = request.form['findings']
-        cause_of_death = request.form['cause_of_death']
 
-        cursor.execute(
-            '''INSERT INTO Postmortem (CaseID, DoctorID, ExaminationDate, Findings, CauseOfDeath) 
-               VALUES (%s, %s, %s, %s, %s)''',
-            (case_id, doctor_id, exam_date, findings, cause_of_death)
-        )
-        conn.commit()
-        log_action(session['id'], "Recorded a postmortem report.")
-        flash('Postmortem report saved securely!')
+        try:
+            cursor.execute(
+                """
+                INSERT INTO postmortem (caseid, doctorid, icd10code, dateofexam, findings)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (case_id, doctor_id, icd10_code, date_of_exam, findings)
+            )
+            conn.commit()
+            log_action(session['id'], "Recorded a postmortem report.")
+            flash('Postmortem report saved securely!')
+        except psycopg2.Error as err:
+            conn.rollback()
+            flash(f'Database Error: {err}')
+
+        cursor.close()
+        conn.close()
         return redirect(url_for('postmortem'))
 
-    # GET requests: Fetch dropdown data
-    cursor.execute("SELECT CaseID FROM MedicoLegalCase WHERE CaseStatus != 'Closed'")
+    cursor.execute("""
+        SELECT m.caseid, m.patientid, m.incidentdate
+        FROM medicolegalcase m
+        JOIN casestatus c ON m.statusid = c.statusid
+        WHERE c.statusname != 'Closed'
+        ORDER BY m.caseid
+    """)
     cases = cursor.fetchall()
 
-    cursor.execute("SELECT StaffID, FullName FROM Staff WHERE Role IN ('Doctor', 'JMO')")
+    cursor.execute("SELECT staffid, fullname FROM staff WHERE roleid IN (SELECT roleid FROM role WHERE rolename IN ('Doctor', 'JMO'))")
     doctors = cursor.fetchall()
+
+    cursor.execute("SELECT icd10code, description FROM causeofdeath ORDER BY icd10code")
+    cause_of_death_codes = cursor.fetchall()
 
     cursor.close()
     conn.close()
 
-    return render_template('postmortem.html', cases=cases, doctors=doctors)
+    return render_template('postmortem.html', cases=cases, doctors=doctors, cause_of_death_codes=cause_of_death_codes)
+
+@app.route('/medical_findings', methods=['GET', 'POST'])
+def medical_findings():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+
+    if session['role'] not in ['Admin', 'Doctor', 'JMO']:
+        flash("You do not have permission to manage medical findings.")
+        return redirect(url_for('dashboard'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    if request.method == 'POST':
+        submission_type = request.form.get('submission_type')
+        case_id = request.form['case_id']
+        doctor_id = request.form['doctor_id']
+        findings = request.form['findings']
+
+        try:
+            if submission_type == 'clinical':
+                examination_date = request.form['examination_date']
+                cursor.execute(
+                    """
+                    INSERT INTO clinicalexamination (caseid, doctorid, examinationdate, findings)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (case_id, doctor_id, examination_date, findings)
+                )
+                flash('Clinical examination saved successfully!')
+            elif submission_type == 'postmortem':
+                icd10_code = request.form['icd10code']
+                date_of_exam = request.form['date_of_exam']
+                cursor.execute(
+                    """
+                    INSERT INTO postmortem (caseid, doctorid, icd10code, dateofexam, findings)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (case_id, doctor_id, icd10_code, date_of_exam, findings)
+                )
+                flash('Postmortem report saved successfully!')
+            else:
+                flash('Invalid submission type.')
+
+            conn.commit()
+            log_action(session['id'], "Recorded medical findings.")
+        except psycopg2.Error as err:
+            conn.rollback()
+            flash(f'Database Error: {err}')
+
+        cursor.close()
+        conn.close()
+        return redirect(url_for('medical_findings'))
+
+    cursor.execute("""
+        SELECT m.caseid
+        FROM medicolegalcase m
+        JOIN casestatus cs ON m.statusid = cs.statusid
+        WHERE cs.statusname != 'Closed'
+        ORDER BY m.caseid
+    """)
+    cases = cursor.fetchall()
+
+    cursor.execute("SELECT staffid, fullname FROM staff WHERE roleid IN (SELECT roleid FROM role WHERE rolename IN ('Doctor', 'JMO')) ORDER BY fullname")
+    doctors = cursor.fetchall()
+
+    cursor.execute("SELECT icd10code, description FROM causeofdeath ORDER BY icd10code")
+    cause_of_death_codes = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    return render_template('medical_findings.html', cases=cases, doctors=doctors, cause_of_death_codes=cause_of_death_codes)
 
 @app.route('/manage_evidence', methods=['GET', 'POST'])
 def manage_evidence():
@@ -340,51 +499,84 @@ def manage_evidence():
 
     if request.method == 'POST':
         case_id = request.form['case_id']
-        evidence_type = request.form['evidence_type']
-        storage_location = request.form['storage_location']
-        collected_by = request.form['collected_by']
+        category_id = int(request.form['categoryid'])
+        locker_id = int(request.form['lockerid'])
+        collected_by = int(request.form['collected_by'])
+        received_by = int(request.form['received_by'])
         collection_date = request.form['collection_date']
         status = request.form['status']
-        
-        # --- NEW: Image Upload Logic ---
+
         filename = None
         if 'evidence_image' in request.files:
             file = request.files['evidence_image']
             if file and file.filename != '' and allowed_file(file.filename):
-                # Secure the filename and add a unique ID to prevent overwriting images with the same name
                 original_filename = secure_filename(file.filename)
-                unique_id = str(uuid.uuid4())[:8] 
+                unique_id = str(uuid.uuid4())[:8]
                 filename = f"{case_id}_{unique_id}_{original_filename}"
-                
-                # Save the file to the static/uploads/evidence folder
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(file_path)
 
-        # Update SQL to include the ImagePath
-        cursor.execute(
-            '''INSERT INTO Evidence (CaseID, EvidenceType, StorageLocation, CollectedBy, CollectionDate, Status, ImagePath) 
-               VALUES (%s, %s, %s, %s, %s, %s, %s)''',
-            (case_id, evidence_type, storage_location, collected_by, collection_date, status, filename)
-        )
-        conn.commit()
-        log_action(session['id'], f"Logged evidence {evidence_type} for case {case_id}")
-        
-        flash('Evidence and image logged securely!')
+        try:
+            cursor.execute(
+                """
+                INSERT INTO evidence (caseid, categoryid, lockerid, collectedby, collectiondate, status)
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING evidenceid
+                """,
+                (case_id, category_id, locker_id, collected_by, collection_date, status)
+            )
+            new_evidence_id = cursor.fetchone()['evidenceid']
+
+            if filename:
+                cursor.execute(
+                    "INSERT INTO evidenceimage (evidenceid, imagepath) VALUES (%s, %s)",
+                    (new_evidence_id, filename)
+                )
+
+            cursor.execute(
+                """
+                INSERT INTO chainofcustody (evidenceid, releasedby, receivedby, transfertime, purpose)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (new_evidence_id, collected_by, received_by, collection_date, 'Initial Evidence Logging')
+            )
+
+            conn.commit()
+            log_action(session['id'], f"Logged evidence for case {case_id}")
+            flash('Evidence and chain of custody logged securely!')
+        except (ValueError, psycopg2.Error) as err:
+            conn.rollback()
+            flash(f'Database Error: {err}')
+
+        cursor.close()
+        conn.close()
         return redirect(url_for('manage_evidence'))
 
-    # GET requests: Fetch existing data for the form
-    cursor.execute("SELECT CaseID FROM MedicoLegalCase WHERE CaseStatus != 'Closed'")
+    cursor.execute("SELECT caseid FROM medicolegalcase ORDER BY caseid")
     cases = cursor.fetchall()
 
-    cursor.execute("SELECT StaffID, FullName, Role FROM Staff WHERE Role IN ('Lab', 'Doctor', 'JMO', 'Admin')")
+    cursor.execute("SELECT categoryid, categoryname FROM evidencecategory ORDER BY categoryname")
+    categories = cursor.fetchall()
+
+    cursor.execute("SELECT lockerid, roomname, temperaturezone FROM storagelocker ORDER BY roomname")
+    lockers = cursor.fetchall()
+
+    cursor.execute("SELECT staffid, fullname FROM staff ORDER BY fullname")
     staff = cursor.fetchall()
-    
-    # Fetch all evidence to display in a table
+
     cursor.execute("""
-        SELECT e.*, s.FullName as CollectorName 
-        FROM Evidence e 
-        LEFT JOIN Staff s ON e.CollectedBy = s.StaffID 
-        ORDER BY e.EvidenceID DESC
+        SELECT e.evidenceid, e.caseid, e.collectiondate, e.status,
+               c.categoryname, l.roomname AS lockername,
+               collected.fullname AS collectedby_name,
+               received.fullname AS receivedby_name,
+               i.imagepath
+        FROM evidence e
+        LEFT JOIN evidencecategory c ON e.categoryid = c.categoryid
+        LEFT JOIN storagelocker l ON e.lockerid = l.lockerid
+        LEFT JOIN staff collected ON e.collectedby = collected.staffid
+        LEFT JOIN chainofcustody coc ON e.evidenceid = coc.evidenceid
+        LEFT JOIN staff received ON coc.receivedby = received.staffid
+        LEFT JOIN evidenceimage i ON e.evidenceid = i.evidenceid
+        ORDER BY e.evidenceid DESC
     """)
     evidence_list = cursor.fetchall()
 
@@ -393,7 +585,14 @@ def manage_evidence():
     cursor.close()
     conn.close()
 
-    return render_template('manage_evidence.html', cases=cases, staff=staff, evidence_list=evidence_list)
+    return render_template(
+        'manage_evidence.html',
+        cases=cases,
+        categories=categories,
+        lockers=lockers,
+        staff=staff,
+        evidence_list=evidence_list
+    )
 
 @app.route('/lab_test', methods=['GET', 'POST'])
 def lab_test():
@@ -427,19 +626,121 @@ def lab_test():
 
     # Fetch data for the dropdowns
     cursor.execute("""
-        SELECT e.EvidenceID, e.EvidenceType, e.CaseID 
-        FROM Evidence e 
-        WHERE e.Status IN ('Stored', 'In Lab')
+        SELECT e.evidenceid, ec.categoryname AS evidencetype, e.caseid
+        FROM evidence e
+        JOIN evidencecategory ec ON e.categoryid = ec.categoryid
+        WHERE e.status IN ('Stored', 'In Lab')
     """)
     evidence_items = cursor.fetchall()
 
-    cursor.execute("SELECT StaffID, FullName FROM Staff WHERE Role IN ('Lab', 'Admin')")
+    cursor.execute("""
+        SELECT s.staffid, s.fullname
+        FROM staff s
+        JOIN role r ON s.roleid = r.roleid
+        WHERE r.rolename IN ('Lab', 'Admin')
+    """)
     lab_staff = cursor.fetchall()
 
     cursor.close()
     conn.close()
 
     return render_template('lab_test.html', evidence_items=evidence_items, lab_staff=lab_staff)
+
+@app.route('/manage_documents', methods=['GET', 'POST'])
+def manage_documents():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+
+    if session['role'] not in ['Admin', 'Doctor', 'JMO', 'Lab']:
+        flash("You do not have permission to manage documents.")
+        return redirect(url_for('dashboard'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    if request.method == 'POST':
+        case_id = request.form['case_id']
+        document_type = request.form['document_type']
+        uploaded_file = request.files.get('document_file')
+
+        if not uploaded_file or uploaded_file.filename == '':
+            flash('Please select a file to upload.')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('manage_documents'))
+
+        if not allowed_file(uploaded_file.filename):
+            flash('Unsupported file type.')
+            cursor.close()
+            conn.close()
+            return redirect(url_for('manage_documents'))
+
+        filename = secure_filename(uploaded_file.filename)
+        unique_filename = f"{uuid.uuid4().hex}_{filename}"
+        save_path = os.path.join(app.config['DOCUMENT_UPLOAD_FOLDER'], unique_filename)
+        uploaded_file.save(save_path)
+        relative_path = os.path.join('uploads', 'documents', unique_filename).replace('\\', '/')
+
+        try:
+            cursor.execute(
+                """
+                INSERT INTO document (caseid, documenttype, filepath)
+                VALUES (%s, %s, %s)
+                """,
+                (case_id, document_type, relative_path)
+            )
+            conn.commit()
+            log_action(session['id'], f"Uploaded a document for case {case_id}.")
+            flash('Document uploaded successfully!')
+        except psycopg2.Error as err:
+            conn.rollback()
+            flash(f'Database Error: {err}')
+
+        cursor.close()
+        conn.close()
+        return redirect(url_for('manage_documents'))
+
+    cursor.execute("""
+        SELECT m.caseid
+        FROM medicolegalcase m
+        JOIN casestatus c ON m.statusid = c.statusid
+        WHERE c.statusname != 'Closed'
+        ORDER BY m.caseid
+    """)
+    cases = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT d.documentid, d.caseid, d.documenttype, d.filepath, m.caseid AS case_number
+        FROM document d
+        JOIN medicolegalcase m ON d.caseid = m.caseid
+        ORDER BY d.documentid DESC
+    """)
+    documents = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    return render_template('documents.html', cases=cases, documents=documents, role=session['role'])
+
+@app.route('/download_document/<int:documentid>')
+def download_document(documentid):
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT filepath FROM document WHERE documentid = %s", (documentid,))
+    document_row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not document_row or not document_row.get('filepath'):
+        flash('Document not found.')
+        return redirect(url_for('manage_documents'))
+
+    filepath = document_row['filepath']
+    filename = os.path.basename(filepath)
+    return send_from_directory(directory='static/uploads/documents', path=filename, as_attachment=True)
 
 
 @app.route('/manage_staff', methods=['GET', 'POST'])
@@ -454,54 +755,57 @@ def manage_staff():
 
     if request.method == 'POST':
         full_name = request.form['full_name']
-        role = request.form['role']
+        dept_id = int(request.form['deptid'])
+        role_id = int(request.form['roleid'])
         contact_no = request.form['contact_no']
         username = request.form['username']
         password = request.form['password']
 
-        # Map the Staff Role to the UserRole enum in the database
-        role_map = {
-            'Doctor': 'Doctor',
-            'JMO': 'Doctor',
-            'Laboratory Staff': 'Lab',
-            'Clerical Officer': 'Clerical',
-            'Admin': 'Admin'
-        }
-        user_role = role_map.get(role, 'Clerical')
-
         try:
-            # 1. Insert into Staff Table
             cursor.execute(
-                "INSERT INTO staff (fullname, role, contactno) VALUES (%s, %s, %s) RETURNING staffid",
-                (full_name, role, contact_no)
+                "INSERT INTO staff (fullname, contactno, deptid, roleid) VALUES (%s, %s, %s, %s) RETURNING staffid",
+                (full_name, contact_no, dept_id, role_id)
             )
             new_staff_id = cursor.fetchone()['staffid']
 
-            # 2. Insert into Users Table
             cursor.execute(
-                "INSERT INTO users (staffid, username, passwordhash, userrole) VALUES (%s, %s, %s, %s)",
-                (new_staff_id, username, password, user_role)
+                "INSERT INTO users (staffid, username, passwordhash) VALUES (%s, %s, %s)",
+                (new_staff_id, username, password)
             )
             conn.commit()
             log_action(session['id'], "Created a new staff account.")
-            flash(f'{role} account created successfully!')
-            
-        except psycopg2.Error as err:
-            conn.rollback() # If one insert fails, cancel both to prevent broken data
-            flash(f'Database Error: Username might already be taken. ({err})')
+            flash('Staff account created successfully!')
 
+        except (ValueError, psycopg2.Error) as err:
+            conn.rollback()
+            flash(f'Database Error: {err}')
+
+        cursor.close()
+        conn.close()
         return redirect(url_for('manage_staff'))
 
-    # GET request: Fetch a list of all current staff to display on the page
-    cursor.execute("SELECT s.StaffID, s.FullName, s.Role, u.Username FROM Staff s LEFT JOIN Users u ON s.StaffID = u.StaffID")
+    cursor.execute("""
+        SELECT s.staffid, s.fullname, s.contactno, d.deptname, r.rolename, u.username
+        FROM staff s
+        LEFT JOIN department d ON s.deptid = d.deptid
+        LEFT JOIN role r ON s.roleid = r.roleid
+        LEFT JOIN users u ON s.staffid = u.staffid
+        ORDER BY s.staffid
+    """)
     staff_list = cursor.fetchall()
 
+    cursor.execute("SELECT deptid, deptname FROM department ORDER BY deptname")
+    departments = cursor.fetchall()
+
+    cursor.execute("SELECT roleid, rolename, accesslevel FROM role ORDER BY rolename")
+    roles = cursor.fetchall()
+
     log_action(session['id'], "Viewed staff management page.")
-    
+
     cursor.close()
     conn.close()
 
-    return render_template('manage_staff.html', staff_list=staff_list)
+    return render_template('manage_staff.html', staff_list=staff_list, departments=departments, roles=roles)
 
 @app.route('/edit_staff/<int:staff_id>', methods=['GET', 'POST'])
 def edit_staff(staff_id):
@@ -512,33 +816,44 @@ def edit_staff(staff_id):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == 'POST':
-        new_role = request.form['role']
-        
-        # Map the Staff Role to the system UserRole
-        role_map = {
-            'Doctor': 'Doctor', 'JMO': 'Doctor', 
-            'Laboratory Staff': 'Lab', 'Clerical Officer': 'Clerical', 
-            'Admin': 'Admin'
-        }
-        user_role = role_map.get(new_role, 'Clerical')
+        dept_id = int(request.form['deptid'])
+        role_id = int(request.form['roleid'])
 
-        # Update both tables to keep them synchronized
-        cursor.execute("UPDATE Staff SET Role = %s WHERE StaffID = %s", (new_role, staff_id))
-        cursor.execute("UPDATE Users SET UserRole = %s WHERE StaffID = %s", (user_role, staff_id))
-        conn.commit()
-        log_action(session['id'], "Updated a staff role.")
-        
-        flash('Staff role updated successfully!')
+        try:
+            cursor.execute(
+                "UPDATE staff SET deptid = %s, roleid = %s WHERE staffid = %s",
+                (dept_id, role_id, staff_id)
+            )
+            conn.commit()
+            log_action(session['id'], "Updated a staff role.")
+            flash('Staff details updated successfully!')
+        except psycopg2.Error as err:
+            conn.rollback()
+            flash(f'Database Error: {err}')
+
+        cursor.close()
+        conn.close()
         return redirect(url_for('manage_staff'))
 
-    # GET request: Fetch current staff details to populate the form
-    cursor.execute("SELECT * FROM Staff WHERE StaffID = %s", (staff_id,))
+    cursor.execute("""
+        SELECT s.staffid, s.fullname, s.deptid, s.roleid, d.deptname, r.rolename
+        FROM staff s
+        LEFT JOIN department d ON s.deptid = d.deptid
+        LEFT JOIN role r ON s.roleid = r.roleid
+        WHERE s.staffid = %s
+    """, (staff_id,))
     staff_member = cursor.fetchone()
-    
+
+    cursor.execute("SELECT deptid, deptname FROM department ORDER BY deptname")
+    departments = cursor.fetchall()
+
+    cursor.execute("SELECT roleid, rolename FROM role ORDER BY rolename")
+    roles = cursor.fetchall()
+
     cursor.close()
     conn.close()
 
-    return render_template('edit_staff.html', staff=staff_member)
+    return render_template('edit_staff.html', staff=staff_member, departments=departments, roles=roles)
 
 @app.route('/delete_staff/<int:staff_id>', methods=['POST'])
 def delete_staff(staff_id):
@@ -578,10 +893,11 @@ def audit_logs():
     # ORDER BY LogTime DESC ensures the newest actions are at the top
     query = """
         SELECT a.logid AS logid, a.action AS action, a.logtime AS logtime,
-               u.username AS username, s.fullname AS fullname, s.role AS role
+               u.username AS username, s.fullname AS fullname, r.rolename AS role
         FROM auditlog a
         LEFT JOIN users u ON a.userid = u.userid
         LEFT JOIN staff s ON u.staffid = s.staffid
+        LEFT JOIN role r ON s.roleid = r.roleid
         ORDER BY a.logtime DESC
         LIMIT 200
     """

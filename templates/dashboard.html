@@ -228,7 +228,7 @@
                 <li><a href="/create_case">Open New Case</a></li>
                 <li><a href="/view_cases">Search & View Cases</a></li>
                 <li><a href="/postmortem">Postmortem Findings</a></li>
-                
+                <li><a href="{{ url_for('medical_findings') }}">🏥 Medical Findings Portal</a></li>
                 
                 <li style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.05);">
                     <a href="/reports" style="color: var(--neon-cyan);">📊 System Analytics</a>
@@ -241,6 +241,10 @@
 
             {% if role == 'Lab' or role == 'Admin' %}
                  <li><a href="/lab_test">Laboratory Tests</a></li>
+            {% endif %}
+
+            {% if role == 'Admin' or role == 'Doctor' or role == 'JMO' or role == 'Lab' %}
+                <li><a href="{{ url_for('manage_documents') }}">📄 Document Management</a></li>
             {% endif %}
 
             {% if role == 'Admin' %}

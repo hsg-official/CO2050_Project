@@ -110,11 +110,6 @@
 
         <form method="POST" action="{{ url_for('create_case') }}">
             <div class="form-group">
-                <label for="case_id">Case ID (e.g., CASE-2026-003)</label>
-                <input type="text" id="case_id" name="case_id" required placeholder="CASE-YYYY-XXX">
-            </div>
-            
-            <div class="form-group">
                 <label for="patient_id">Select Patient</label>
                 <select id="patient_id" name="patient_id" required>
                     <option value="">-- Choose a Patient --</option>
@@ -125,23 +120,22 @@
             </div>
 
             <div class="form-group">
-                <label for="assigned_jmo">Assign Medical Officer</label>
-                <select id="assigned_jmo" name="assigned_jmo" required>
-                    <option value="">-- Choose an Officer --</option>
-                    {% for doc in doctors %}
-                        <option value="{{ doc.staffid }}">{{ doc.fullname }} ({{ doc.role }})</option>
+                <label for="assigneddoctor">Assign Doctor</label>
+                <select id="assigneddoctor" name="assigneddoctor" required>
+                    <option value="">-- Choose a Doctor --</option>
+                    {% for doctor in doctors %}
+                        <option value="{{ doctor.staffid }}">{{ doctor.fullname }} ({{ doctor.role }})</option>
                     {% endfor %}
                 </select>
             </div>
 
             <div class="form-group">
-                <label for="case_type">Incident Type</label>
-                <select id="case_type" name="case_type" required>
-                    <option value="Accident">Accident</option>
-                    <option value="Assault">Assault</option>
-                    <option value="Homicide">Homicide</option>
-                    <option value="Sudden Death">Sudden Death</option>
-                    <option value="Other">Other</option>
+                <label for="casetypeid">Case Type</label>
+                <select id="casetypeid" name="casetypeid" required>
+                    <option value="">-- Choose a Case Type --</option>
+                    {% for case_type in case_types %}
+                        <option value="{{ case_type.casetypeid }}">{{ case_type.casetypename }}</option>
+                    {% endfor %}
                 </select>
             </div>
 
@@ -149,18 +143,34 @@
                 <label for="incident_date">Incident Date</label>
                 <input type="date" id="incident_date" name="incident_date" required>
             </div>
-            
+
             <div class="form-group">
-                <label for="policestation">Referring Police Station</label>
-                <input type="text" id="policestation" name="policestation" placeholder="e.g., Kandy Police Station" required>
+                <label for="officerid">Investigating Officer</label>
+                <select id="officerid" name="officerid" required>
+                    <option value="">-- Choose an Officer --</option>
+                    {% for officer in officers %}
+                        <option value="{{ officer.officerid }}">{{ officer.fullname }} (Badge: {{ officer.badgenumber }})</option>
+                    {% endfor %}
+                </select>
             </div>
 
             <div class="form-group">
-                <label for="case_status">Status</label>
-                <select id="case_status" name="case_status" required>
-                    <option value="Open">Open</option>
-                    <option value="Pending Investigation">Pending Investigation</option>
-                    <option value="Closed">Closed</option>
+                <label for="locationid">Police Station</label>
+                <select id="locationid" name="locationid" required>
+                    <option value="">-- Choose a Police Station --</option>
+                    {% for station in policestations %}
+                        <option value="{{ station.stationid }}">{{ station.stationname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="statusid">Status</label>
+                <select id="statusid" name="statusid" required>
+                    <option value="">-- Choose a Status --</option>
+                    {% for case_status in case_statuses %}
+                        <option value="{{ case_status.statusid }}">{{ case_status.statusname }}</option>
+                    {% endfor %}
                 </select>
             </div>
 
